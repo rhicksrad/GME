@@ -6,6 +6,8 @@ function toSeconds(timestamp: number): number {
   return Math.floor(timestamp / 1000);
 }
 
+const LIMIT = 390;
+
 function buildPriceData(bars: MinuteBar[]): uPlot.AlignedData {
   const x: number[] = [];
   const open: number[] = [];
@@ -164,7 +166,8 @@ export function createPriceChart(container: HTMLElement): PriceChartHandle {
   const observer = createResizeObserver(chart, container);
   return {
     update(bars: MinuteBar[]) {
-      chart.setData(buildPriceData(bars));
+      const trimmed = bars.length > LIMIT ? bars.slice(-LIMIT) : bars;
+      chart.setData(buildPriceData(trimmed));
     },
     destroy() {
       observer.disconnect();
@@ -201,7 +204,8 @@ export function createVolumeChart(container: HTMLElement): VolumeChartHandle {
   const observer = createResizeObserver(chart, container);
   return {
     update(bars: MinuteBar[]) {
-      chart.setData(buildVolumeData(bars));
+      const trimmed = bars.length > LIMIT ? bars.slice(-LIMIT) : bars;
+      chart.setData(buildVolumeData(trimmed));
     },
     destroy() {
       observer.disconnect();

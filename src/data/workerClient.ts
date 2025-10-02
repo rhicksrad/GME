@@ -1,4 +1,4 @@
-import { createWorkerUrl } from '../config';
+import { wurl } from '../config';
 import type { ConnectionState, Trade } from '../types';
 
 export interface Quote {
@@ -38,22 +38,26 @@ export interface LiveConnection {
   close(): void;
 }
 
+function normalizeEpoch(value: number): number {
+  return value > 1_000_000_000_000 ? Math.floor(value / 1000) : Math.floor(value);
+}
+
 function createWsUrl(): string {
-  const url = createWorkerUrl('/ws');
+  const url = new URL(wurl('/ws'));
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   return url.toString();
 }
 
-export async function fetchQuote(symbol: string, signal?: AbortSignal): Promise<Quote> {
-  const url = createWorkerUrl('/finnhub/quote');
-  url.searchParams.set('symbol', symbol);
-  url.searchParams.set('nocache', '1');
-  const response = await fetch(url.toString(), {
+export async function fetchQuote(symbol = 'GME', signal?: AbortSignal): Promise<Quote> {
+  const url = wurl(`/finnhub/quote?symbol=${encodeURIComponent(symbol)}&nocache=1`);
+  const response = await fetch(url, {
+    mode: 'cors',
+    credentials: 'omit',
     headers: { Accept: 'application/json' },
     signal,
   });
   if (!response.ok) {
-    const error = new Error(`Quote request failed (${response.status})`);
+    const error = new Error(`quote ${response.status}`);
     throw Object.assign(error, { status: response.status });
   }
   return (await response.json()) as Quote;
@@ -66,24 +70,24 @@ export async function fetchCandles(
   resolution: '1',
   signal?: AbortSignal,
 ): Promise<Candle[]> {
-  const url = createWorkerUrl('/finnhub/stock/candle');
-  url.searchParams.set('symbol', symbol);
-  url.searchParams.set('resolution', resolution);
-  url.searchParams.set('from', Math.floor(from / 1000).toString());
-  url.searchParams.set('to', Math.floor(to / 1000).toString());
-  const response = await fetch(url.toString(), {
+  const url = wurl(
+    `/finnhub/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=${resolution}&from=${normalizeEpoch(from)}&to=${normalizeEpoch(to)}`,
+  );
+  const response = await fetch(url, {
+    mode: 'cors',
+    credentials: 'omit',
     headers: { Accept: 'application/json' },
     signal,
   });
   if (!response.ok) {
-    const error = new Error(`Candle request failed (${response.status})`);
+    const error = new Error(`candles ${response.status}`);
     throw Object.assign(error, { status: response.status });
   }
   const payload = (await response.json()) as CandleResponse;
   if (payload.s !== 'ok') {
     return [];
   }
-  const candles: Candle[] = payload.t.map((t, index) => ({
+  return payload.t.map((t, index) => ({
     t,
     o: payload.o[index],
     h: payload.h[index],
@@ -91,7 +95,10 @@ export async function fetchCandles(
     c: payload.c[index],
     v: payload.v[index],
   }));
-  return candles;
+}
+
+export function connectSSE(): EventSource {
+  return new EventSource(wurl('/sse/alerts'));
 }
 
 class WorkerLiveConnection implements LiveConnection {
@@ -244,4 +251,3 @@ class WorkerLiveConnection implements LiveConnection {
 export function connectLive(symbol: string): LiveConnection {
   return new WorkerLiveConnection(symbol);
 }
-

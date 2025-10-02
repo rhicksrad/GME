@@ -1,4 +1,4 @@
-import { features, getWorkerOrigin } from '../config';
+import { features, wurl } from '../config';
 
 export interface OptRow {
   ts: number;
@@ -87,12 +87,11 @@ export async function fetchDailyOI(): Promise<OptionsResponse> {
 }
 
 async function requestChain(path: string): Promise<RequestResult> {
-  const base = getWorkerOrigin() || (typeof window !== 'undefined' ? window.location.origin : '');
-  const url = new URL(path, base);
+  const url = wurl(path);
   let lastError: string | undefined;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     try {
-      const response = await fetch(url.toString(), {
+      const response = await fetch(url, {
         headers: { Accept: 'application/json' },
       });
       if (response.ok) {
