@@ -16,6 +16,12 @@ Pages builds must not depend on secrets or live providers.
 
 Prefer stale-but-valid UI over blank screens.
 
+Free tier fallback
+
+- The public site must tolerate environments with only `/finnhub/quote` plus slower aggregates.
+- Disable the options panel and related alerts when premium chains are inaccessible.
+- Minute bars should attempt resolution `1` first, then degrade to `5` or quotes-only mode without spamming the worker.
+
 Runtime architecture
 
 Cron jobs push normalized data into KV and publish to LiveBus DO.
