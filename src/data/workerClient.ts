@@ -1,4 +1,4 @@
-import { getWorkerOrigin } from '../config';
+import { createWorkerUrl } from '../config';
 import type { ConnectionState, Trade } from '../types';
 
 export interface Quote {
@@ -39,15 +39,13 @@ export interface LiveConnection {
 }
 
 function createWsUrl(): string {
-  const origin = getWorkerOrigin();
-  const target = origin || window.location.origin;
-  const url = new URL('/ws', target);
+  const url = createWorkerUrl('/ws');
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   return url.toString();
 }
 
 export async function fetchQuote(symbol: string, signal?: AbortSignal): Promise<Quote> {
-  const url = new URL('/finnhub/quote', getWorkerOrigin() || window.location.origin);
+  const url = createWorkerUrl('/finnhub/quote');
   url.searchParams.set('symbol', symbol);
   url.searchParams.set('nocache', '1');
   const response = await fetch(url.toString(), {
@@ -68,7 +66,7 @@ export async function fetchCandles(
   resolution: '1',
   signal?: AbortSignal,
 ): Promise<Candle[]> {
-  const url = new URL('/finnhub/stock/candle', getWorkerOrigin() || window.location.origin);
+  const url = createWorkerUrl('/finnhub/stock/candle');
   url.searchParams.set('symbol', symbol);
   url.searchParams.set('resolution', resolution);
   url.searchParams.set('from', Math.floor(from / 1000).toString());
