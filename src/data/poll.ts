@@ -1,19 +1,38 @@
 // src/data/poll.ts
 type TickFn = () => void;
 
-export function ensureInterval(key: string, ms: number, fn: TickFn) {
-  const g = globalThis as any;
-  if (g[key]) return g[key] as number;
-  const id = setInterval(fn, ms) as unknown as number;
-  g[key] = id;
+type IntervalHandle = ReturnType<typeof setInterval>;
 
-  // HMR cleanup
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  if (import.meta?.hot) {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    import.meta.hot.dispose(() => clearInterval(g[key]));
+type GlobalWithIntervals = typeof globalThis & {
+  __GME_INTERVALS__?: Map<string, IntervalHandle>;
+};
+
+const globalWithIntervals = globalThis as GlobalWithIntervals;
+
+function getIntervalStore(): Map<string, IntervalHandle> {
+  if (!globalWithIntervals.__GME_INTERVALS__) {
+    globalWithIntervals.__GME_INTERVALS__ = new Map();
   }
+  return globalWithIntervals.__GME_INTERVALS__;
+}
+
+export function ensureInterval(key: string, ms: number, fn: TickFn): IntervalHandle {
+  const store = getIntervalStore();
+  const existing = store.get(key);
+  if (existing) return existing;
+
+  const id = setInterval(fn, ms);
+  store.set(key, id);
+
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+      const handle = store.get(key);
+      if (handle) {
+        clearInterval(handle);
+        store.delete(key);
+      }
+    });
+  }
+
   return id;
 }
