@@ -8,6 +8,7 @@ GME Radar is a lightweight single-page dashboard that visualises GameStop’s li
 - **Automatic demo mode** – When the worker is unavailable the UI falls back to bundled samples replayed at 2× speed, keeping the charts populated.
 - **Intraday analytics** – Rolling VWAP, 1‑minute change, high/low range, and standard-deviation spike flags.
 - **Responsive charts** – uPlot candlesticks and volume histograms with adaptive resizing and animation throttling.
+- **Options analytics** – Server-proxied Polygon snapshots with Yahoo Finance fallback, moneyness heatmaps, unusual activity flags, and an alert ticker.
 - **GitHub Pages ready** – No build-time secrets, deterministic pnpm workflow, and a Pages deployment that works out of the box.
 
 ## Getting started
@@ -63,8 +64,9 @@ pnpm preview
 1. **Primary path** – `src/data/workerClient.ts` targets the Worker REST and WebSocket endpoints. Quotes poll every 3 s with `nocache=1`, minute candles refresh every 20 s, and the WS client performs exponential backoff with jitter.
 2. **Aggregation** – `src/data/ohlc.ts` rolls all trades into 1‑minute OHLC bars (last 390 minutes) to power the charts and analytics.
 3. **Signals** – `src/signals.ts` computes VWAP, 1‑minute change, daily high/low, and a 60-minute sigma spike indicator.
-4. **UI** – `src/ui/charts.ts` renders uPlot candlesticks and volume columns while `src/ui/status.ts` manages the status footer and banner.
-5. **Fallback** – `src/sim/simulator.ts` replays `public/demo/*.json` at 2× speed whenever both REST and WS fail for more than 10 s.
+4. **Options** – `src/data/optionsClient.ts` hits the Worker `/poly/options/chain` endpoint (Polygon with a server-side key) and downgrades to `/yahoo/options` when the key is missing or rate limited. `src/options/signals.ts` aggregates contracts by expiry and moneyness, while `src/ui/optionsPanel.ts` and `src/ui/alerts.ts` render the heatmap, unusual contract list, and rolling alert ticker.
+5. **UI** – `src/ui/charts.ts` renders uPlot candlesticks and volume columns while `src/ui/status.ts` manages the status footer and banner.
+6. **Fallback** – `src/sim/simulator.ts` replays `public/demo/*.json` at 2× speed whenever both REST and WS fail for more than 10 s.
 
 ## Cloudflare Worker proxy
 
@@ -74,7 +76,14 @@ All network calls originate from the browser to:
 - `GET /finnhub/stock/candle?symbol=SYM&resolution=1&from=…&to=…`
 - `WS /ws` sending `{ "type": "subscribe", "symbol": "SYM" }`
 
-The Worker injects the Finnhub token and handles upstream rate limits. No Finnhub keys live in this repository or the static bundle.
+Options activity uses additional endpoints:
+
+- `GET /poly/options/chain?underlying=SYM` injects the `POLYGON_KEY` server-side and returns normalised snapshots. Missing keys respond with `501` so the client can downgrade cleanly.
+- `GET /yahoo/options?symbol=SYM` proxies Yahoo Finance’s delayed chain JSON with a short cache window.
+
+The Worker injects the Finnhub token, shapes responses with permissive CORS headers, and keeps provider secrets off the client.
+
+Rate limits are handled with exponential backoff in the browser; if Polygon returns `429` or 5xx the app reuses the previous snapshot and automatically falls back to Yahoo-delayed data instead of blanking the UI.
 
 ## Demo mode
 
