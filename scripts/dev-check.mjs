@@ -1,18 +1,44 @@
+#!/usr/bin/env node
 /* eslint-env node */
-const required = ['VITE_FINNHUB_TOKEN', 'VITE_POLYGON_KEY'];
 
-const summary = required.map((key) => {
-  const value = process.env[key];
-  if (!value) {
-    return `${key}: missing`;
+const origin = process.env.VITE_WORKER_ORIGIN?.trim() || 'http://localhost:8787';
+
+async function check() {
+  console.log('GME Radar environment check');
+  console.log(`Worker origin: ${origin}`);
+  const restUrl = new URL('/finnhub/quote?symbol=GME&nocache=1', origin).toString();
+  let restStatus = 'unknown';
+  try {
+    const response = await fetch(restUrl, { method: 'GET', headers: { Accept: 'application/json' } });
+    restStatus = response.ok ? `ok (${response.status})` : `error (${response.status})`;
+  } catch (error) {
+    restStatus = `unreachable (${(error && error.message) || 'error'})`;
   }
-  const masked = value.length > 6 ? `${value.slice(0, 3)}***${value.slice(-2)}` : '***';
-  return `${key}: loaded (${masked})`;
-});
+  console.log(`REST /finnhub/quote: ${restStatus}`);
 
-console.log('GME Radar environment check');
-summary.forEach((line) => console.log(` - ${line}`));
+  const wsUrl = new URL('/ws', origin.replace(/^http/i, 'ws'));
+  console.log(`WS endpoint: ${wsUrl.toString()} (connectivity check requires browser)`);
 
-if (summary.some((line) => line.includes('missing'))) {
-  console.log('\nDemo mode will be used for missing credentials.');
+  const demoFiles = ['public/demo/quote.json', 'public/demo/candles.json', 'public/demo/trades.jsonl'];
+  const missing = demoFiles.filter((file) => {
+    try {
+      fs.accessSync(file);
+      return false;
+    } catch {
+      return true;
+    }
+  });
+  if (missing.length === 0) {
+    console.log('Demo assets: available');
+  } else {
+    console.log(`Demo assets missing: ${missing.join(', ')}`);
+  }
+
+  if (!restStatus.startsWith('ok')) {
+    console.log('Live worker unavailable – UI will start in demo mode.');
+  }
 }
+
+import fs from 'node:fs';
+
+await check();
