@@ -660,8 +660,9 @@ function formatWorkerOrigin(): string {
     return window.location.origin;
   }
   try {
-    const url = new URL(origin);
-    return url.host;
+    const base = new URL(origin, window.location.origin);
+    const path = base.pathname === '/' ? '' : base.pathname.replace(/\/$/, '');
+    return `${base.host}${path}`;
   } catch {
     return origin;
   }
