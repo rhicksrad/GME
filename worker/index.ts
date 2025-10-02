@@ -49,6 +49,9 @@ export default {
       if (path === '/ws') {
         return handleWebsocket(request, env, ctx);
       }
+      if (path === '/sse/alerts') {
+        return handleSseAlerts();
+      }
       return json({ error: 'Not found' }, 404);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unhandled error';
@@ -173,6 +176,37 @@ function handleWebsocket(request: Request, env: Env, ctx: ExecutionContext): Res
   );
 
   return new Response(null, { status: 101, webSocket: client });
+}
+
+function handleSseAlerts(): Response {
+  const encoder = new TextEncoder();
+  let interval: ReturnType<typeof setInterval> | undefined;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const send = (data: unknown) => {
+        const frame = `data: ${JSON.stringify(data)}\n\n`;
+        controller.enqueue(encoder.encode(frame));
+      };
+      controller.enqueue(encoder.encode(':ok\n\n'));
+      send({ type: 'heartbeat', ts: Date.now() });
+      interval = setInterval(() => {
+        send({ type: 'heartbeat', ts: Date.now() });
+      }, 15000);
+    },
+    cancel() {
+      if (interval !== undefined) {
+        clearInterval(interval);
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      'access-control-allow-origin': '*',
+    },
+  });
 }
 
 function normalizePolygon(result: PolygonResult, fallbackTs: number): OptRow | null {
