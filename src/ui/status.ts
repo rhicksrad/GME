@@ -12,6 +12,9 @@ export interface StatusHandle {
   setConnection(state: ConnectionState): void;
   setLastUpdated(timestamp: number | null): void;
   setRetries(count: number): void;
+  setWorkerOrigin(origin: string): void;
+  setOptionsStatus(label: string, delayed?: boolean): void;
+  setOptionsUpdated(timestamp: number | null): void;
   setBanner(message: string | null, tone?: BannerTone): void;
 }
 
@@ -44,7 +47,25 @@ export function createStatus(): StatusHandle {
   updatedLabel.setAttribute('aria-live', 'polite');
   updatedLabel.textContent = 'Last update: —';
 
-  statusLine.append(modeBadge, connectionBadge, retryLabel, updatedLabel, retryButton);
+  const workerLabel = document.createElement('span');
+  workerLabel.className = 'worker-label';
+  workerLabel.textContent = 'Worker: —';
+
+  const optionsLabel = document.createElement('span');
+  optionsLabel.className = 'options-label';
+  optionsLabel.textContent = 'Options: —';
+
+  let optionsBaseLabel = 'Options: —';
+
+  statusLine.append(
+    modeBadge,
+    connectionBadge,
+    retryLabel,
+    updatedLabel,
+    workerLabel,
+    optionsLabel,
+    retryButton,
+  );
   footer.append(statusLine);
 
   const banner = document.createElement('div');
@@ -87,6 +108,27 @@ export function createStatus(): StatusHandle {
     retryLabel.textContent = `Retries: ${count}`;
   }
 
+  function setWorkerOrigin(origin: string) {
+    workerLabel.textContent = `Worker: ${origin}`;
+  }
+
+  function setOptionsStatus(label: string, delayed = false) {
+    optionsBaseLabel = delayed ? `Options: ${label} (delayed)` : `Options: ${label}`;
+    const timestamp = optionsLabel.dataset.updatedAt;
+    optionsLabel.textContent = timestamp ? `${optionsBaseLabel} – ${formatTime(Date.parse(timestamp))}` : optionsBaseLabel;
+    optionsLabel.style.color = delayed ? '#facc15' : '#cbd5f5';
+  }
+
+  function setOptionsUpdated(timestamp: number | null) {
+    if (timestamp == null) {
+      optionsLabel.dataset.updatedAt = '';
+      optionsLabel.textContent = optionsBaseLabel;
+      return;
+    }
+    optionsLabel.dataset.updatedAt = new Date(timestamp).toISOString();
+    optionsLabel.textContent = `${optionsBaseLabel} – ${formatTime(timestamp)}`;
+  }
+
   function setBanner(message: string | null, tone: BannerTone = 'info') {
     if (!message) {
       banner.hidden = true;
@@ -108,6 +150,9 @@ export function createStatus(): StatusHandle {
     setConnection,
     setLastUpdated,
     setRetries,
+    setWorkerOrigin,
+    setOptionsStatus,
+    setOptionsUpdated,
     setBanner,
   };
 }

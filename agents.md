@@ -1,58 +1,62 @@
-# GME Radar agent guide
+Title: GME Radar agent guide (Phase 3)
 
-## Scope
+What you’re maintaining
 
-You are an AI agent maintaining a static site that consumes a Cloudflare Worker proxy for Finnhub. Never add trading.
+A static site that pulls live equities via a Cloudflare Worker proxy and builds options analytics without exposing secrets.
 
-## Golden rules
+Providers:
 
-- Never expose or embed API keys in client code.
-- All market calls go through the Worker:
-  - REST: `/finnhub/...`
-  - WS: `/ws` with Finnhub-style subscribe frames
-- Build must succeed without secrets. When in doubt, default to demo mode.
-- Never break Pages deploy by introducing required env at build time.
+Equities: /finnhub/* REST and /ws
+Options primary: /poly/options/chain (server-injected key)
+Options fallback: /yahoo/options (delayed)
 
-## Runtime configuration
+Golden rules
 
-- `VITE_WORKER_ORIGIN` optional; default is same origin. Use it only at runtime via `new URL(path, VITE_WORKER_ORIGIN || location.origin)`.
-- Symbol comes from `?symbol=`. Default GME.
+Never embed API keys in browser code.
+All HTTP calls go through the Worker; builds must succeed with zero secrets.
+If any upstream is down/429, back off and keep UI rendering; prefer stale>blank.
 
-## Data contract
+Runtime config
 
-- `/finnhub/quote` returns Finnhub quote JSON with keys `c,d,dp,h,l,o,pc,t`.
-- `/finnhub/stock/candle` returns arrays `c,h,l,o,s,t,v`.
-- WS messages mirror Finnhub: `{ type: "trade", data: [{ p, s, t, v }] }` and pings.
-- Aggregation produces minute OHLC with fields `{ t, o, h, l, c, v }` rolling 390 bars.
+VITE_WORKER_ORIGIN optional. Default to same origin.
+Symbol comes from ?symbol=; default GME.
 
-## Error handling
+Data contracts
 
-- For REST 429 or 5xx, exponential backoff with jitter. Do not throw.
-- For WS close or error, reconnect with backoff and resubscribe. Keep a single socket.
-- If both REST and WS unavailable for 10s, switch to demo mode and show “DEMO” badge.
+Quote: /finnhub/quote → {c,d,dp,h,l,o,pc,t}
+Candles: /finnhub/stock/candle → arrays {c,h,l,o,s,t,v}
+Options chain normalized row:
 
-## Testing checklist
+{ ts, exp, type, strike, bid?, ask?, last?, mid?, volume?, openInterest?, iv? }
 
-- Live path: price updates within 2–5s, no duplicate bars, no memory leak on hot reload.
-- Demo path: charts render with sample data when Worker is unreachable.
-- Accessibility: focusable status controls, sufficient contrast.
+Aggregations:
 
-## CI rules
+Expiry totals: calls/puts volume, OI
+Moneyness matrix: deep ITM/ITM/ATM/OTM/deep OTM vs spot
+Alerts emitted with payload and source contract IDs
 
-- Use pnpm 9.12.1 and Node 20 with cache.
-- Build output in `dist`. No secret-gated steps.
-- Lint and typecheck must pass.
+Error handling playbook
 
-## Don’ts
+REST 429/5xx: exponential backoff with jitter, cap 30s
+Polygon 501/no key: switch to Yahoo fallback
+If both options sources fail: switch to demo data and show “DELAYED/DEMO” badge
 
-- Don’t scrape vendor endpoints directly from the browser.
-- Don’t hardcode worker hostnames; use relative URLs or `VITE_WORKER_ORIGIN`.
-- Don’t block UI on network calls. Always render.
+CI rules
 
-## Playbook
+pnpm 9.12.1; Node 20; cache pnpm
+No env required at build; never gate build on provider availability
+Lint/typecheck must pass
 
-- If quotes appear stale, confirm `nocache=1` is appended for `/quote`.
-- If WS floods, debounce UI updates to 15 Hz and aggregate trades to bars.
-- If deploy fails with “pnpm not found”, verify action order exactly as in this doc.
+Common pitfalls
 
-_End of agents.md._
+Missing nocache=1 on /finnhub/quote yields stale quotes
+Multiple WS connections after hot-reload; ensure cleanup
+Large JSON inlined by bundler; keep demo data in public/
+
+Verification checklist
+
+Heatmap updates at most every 30–60s; alerts roll in without jank
+Refresh keeps last known symbol and baselines
+Worker returns CORS-enabled JSON for both providers
+
+End agents.md.

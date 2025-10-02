@@ -1,3 +1,4 @@
+import { getWorkerOrigin } from '../config';
 import type { ConnectionState, Trade } from '../types';
 
 export interface Quote {
@@ -37,19 +38,8 @@ export interface LiveConnection {
   close(): void;
 }
 
-function resolveOrigin(): string {
-  if (typeof window === 'undefined') {
-    return '';
-  }
-  const raw = (import.meta.env.VITE_WORKER_ORIGIN as string | undefined) ?? '';
-  if (raw.trim().length === 0) {
-    return window.location.origin;
-  }
-  return raw;
-}
-
 function createWsUrl(): string {
-  const origin = resolveOrigin();
+  const origin = getWorkerOrigin();
   const target = origin || window.location.origin;
   const url = new URL('/ws', target);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -57,7 +47,7 @@ function createWsUrl(): string {
 }
 
 export async function fetchQuote(symbol: string, signal?: AbortSignal): Promise<Quote> {
-  const url = new URL('/finnhub/quote', resolveOrigin() || window.location.origin);
+  const url = new URL('/finnhub/quote', getWorkerOrigin() || window.location.origin);
   url.searchParams.set('symbol', symbol);
   url.searchParams.set('nocache', '1');
   const response = await fetch(url.toString(), {
@@ -78,7 +68,7 @@ export async function fetchCandles(
   resolution: '1',
   signal?: AbortSignal,
 ): Promise<Candle[]> {
-  const url = new URL('/finnhub/stock/candle', resolveOrigin() || window.location.origin);
+  const url = new URL('/finnhub/stock/candle', getWorkerOrigin() || window.location.origin);
   url.searchParams.set('symbol', symbol);
   url.searchParams.set('resolution', resolution);
   url.searchParams.set('from', Math.floor(from / 1000).toString());
