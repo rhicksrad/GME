@@ -1,12 +1,7 @@
 import { defineConfig } from 'vite';
 
-const repository = process.env.GITHUB_REPOSITORY ?? '';
-const repoName = repository.split('/')[1] ?? '';
-const isUserPage = repoName.endsWith('.github.io');
-const base = repoName && !isUserPage ? `/${repoName}/` : '/';
-
 export default defineConfig({
-  base,
+  base: '/GME/',
   build: {
     outDir: 'dist',
     sourcemap: false,
