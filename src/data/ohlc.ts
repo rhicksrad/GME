@@ -1,108 +1,54 @@
-import type { MinuteBar, Trade } from '../types';
+export interface Bar { t: number; o: number; h: number; l: number; c: number; v: number }
 
-const MINUTE = 60_000;
+export class Bars {
+  private map = new Map<number, Bar>(); // keyed by minute epoch ms
+  private order: number[] = [];
+  private cap = 390;
 
-function minuteStart(timestamp: number): number {
-  return Math.floor(timestamp / MINUTE) * MINUTE;
-}
+  setCap(n: number) { this.cap = Math.max(1, n|0); }
 
-export class MinuteOhlcAggregator {
-  private readonly limit: number;
-
-  private bars: MinuteBar[] = [];
-
-  constructor(limit = 390) {
-    this.limit = limit;
+  applyBackfill(b: Bar) {
+    if (!this.map.has(b.t)) this.insert(b);
   }
 
-  seed(seedBars: MinuteBar[]): void {
-    const sorted = [...seedBars]
-      .map((bar) => ({
-        ...bar,
-        t: minuteStart(bar.t),
-      }))
-      .sort((a, b) => a.t - b.t);
-    this.bars = sorted.slice(-this.limit);
+  upsertTrade(tsMs: number, price: number, size = 0) {
+    const minute = Math.floor(tsMs / 60000) * 60000;
+    const existing = this.map.get(minute);
+    if (existing) {
+      existing.h = Math.max(existing.h, price);
+      existing.l = Math.min(existing.l, price);
+      existing.c = price;
+      existing.v += size;
+    } else {
+      this.insert({ t: minute, o: price, h: price, l: price, c: price, v: size });
+    }
   }
 
-  ingestTrade(trade: Trade): MinuteBar {
-    const timestamp = typeof trade.timestamp === 'number' ? trade.timestamp : Date.now();
-    const bucket = minuteStart(timestamp);
-    const existing = this.bars.at(-1);
-    if (existing && existing.t === bucket) {
-      const close = trade.price;
-      existing.c = close;
-      existing.h = Math.max(existing.h, close);
-      existing.l = Math.min(existing.l, close);
-      existing.v += trade.volume;
-      return existing;
+  private insert(b: Bar) {
+    this.map.set(b.t, { ...b });
+    // keep order sorted but cheap: append then sort occasionally
+    this.order.push(b.t);
+    if (this.order.length > 1 && this.order[this.order.length - 2] > b.t) {
+      this.order.sort((a, z) => a - z);
     }
-
-    const newBar: MinuteBar = {
-      t: bucket,
-      o: trade.price,
-      h: trade.price,
-      l: trade.price,
-      c: trade.price,
-      v: trade.volume,
-    };
-    this.bars.push(newBar);
-    if (this.bars.length > this.limit) {
-      this.bars = this.bars.slice(-this.limit);
+    // enforce cap
+    while (this.order.length > this.cap) {
+      const oldest = this.order.shift()!;
+      this.map.delete(oldest);
     }
-    return newBar;
   }
 
-  applySnapshot(snapshot: MinuteBar[]): void {
-    if (snapshot.length === 0) {
-      return;
+  arrays() {
+    const t: number[] = [];
+    const c: number[] = [];
+    for (const ts of this.order) {
+      const b = this.map.get(ts)!;
+      t.push(b.t); c.push(b.c);
     }
-    const normalized = snapshot
-      .map((bar) => ({ ...bar, t: minuteStart(bar.t) }))
-      .sort((a, b) => a.t - b.t);
-    const latest = this.bars.at(-1);
-    if (!latest) {
-      this.bars = normalized.slice(-this.limit);
-      return;
-    }
-    const merged = [...this.bars];
-    for (const bar of normalized) {
-      const index = merged.findIndex((existing) => existing.t === bar.t);
-      if (index >= 0) {
-        merged[index] = { ...merged[index], ...bar };
-      } else {
-        merged.push(bar);
-      }
-    }
-    this.bars = merged
-      .sort((a, b) => a.t - b.t)
-      .slice(-this.limit);
+    return { t, c };
   }
 
-  touchPrice(price: number, timestamp: number): void {
-    const bucket = minuteStart(timestamp);
-    const latest = this.bars.at(-1);
-    if (!latest || latest.t < bucket) {
-      const bar: MinuteBar = {
-        t: bucket,
-        o: price,
-        h: price,
-        l: price,
-        c: price,
-        v: 0,
-      };
-      this.bars.push(bar);
-      if (this.bars.length > this.limit) {
-        this.bars = this.bars.slice(-this.limit);
-      }
-      return;
-    }
-    latest.c = price;
-    latest.h = Math.max(latest.h, price);
-    latest.l = Math.min(latest.l, price);
-  }
-
-  getBars(): MinuteBar[] {
-    return [...this.bars];
+  values(): Bar[] {
+    return this.order.map((ts) => ({ ...this.map.get(ts)! }));
   }
 }

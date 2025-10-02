@@ -1,50 +1,56 @@
-import { describe, expect, afterEach, beforeEach, it } from 'vitest';
-
-import { __setWorkerOriginForTests, createWorkerUrl } from './config';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type GlobalWithWindow = typeof globalThis & { window?: Window & typeof globalThis };
-
 const globalWithWindow = globalThis as GlobalWithWindow;
 const originalWindow = globalWithWindow.window;
+const originalLocation = globalWithWindow.location;
 
-describe('createWorkerUrl', () => {
+describe('config', () => {
   beforeEach(() => {
-    globalWithWindow.window = {
-      location: { origin: 'http://localhost:5173' } as unknown as Location,
-    } as unknown as Window & typeof globalThis;
-    __setWorkerOriginForTests(null);
+    vi.resetModules();
+    delete (globalWithWindow as any).__VITE_WORKER_ORIGIN__;
+    if (!globalWithWindow.window) {
+      globalWithWindow.window = {} as Window & typeof globalThis;
+    }
+    (globalWithWindow.window as any).VITE_WORKER_ORIGIN = undefined;
+    Object.defineProperty(globalWithWindow, 'location', {
+      configurable: true,
+      value: { protocol: 'https:', host: 'example.com' } as Location,
+    });
   });
 
   afterEach(() => {
-    __setWorkerOriginForTests(null);
+    vi.resetModules();
+    delete (globalWithWindow as any).__VITE_WORKER_ORIGIN__;
     if (originalWindow === undefined) {
       Reflect.deleteProperty(globalWithWindow, 'window');
     } else {
       globalWithWindow.window = originalWindow;
     }
+    if (originalLocation) {
+      Object.defineProperty(globalWithWindow, 'location', {
+        configurable: true,
+        value: originalLocation,
+      });
+    } else {
+      Reflect.deleteProperty(globalWithWindow, 'location');
+    }
   });
 
-  it('uses the browser origin when no worker origin is set', () => {
-    const url = createWorkerUrl('/finnhub/quote');
-    expect(url.toString()).toBe('http://localhost:5173/finnhub/quote');
+  it('falls back to browser origin when no worker origin is provided', async () => {
+    const mod = await import('./config');
+    expect(mod.WORKER_ORIGIN).toBe('https://example.com');
   });
 
-  it('resolves absolute worker origins', () => {
-    __setWorkerOriginForTests('https://worker.example.com');
-    const url = createWorkerUrl('/finnhub/quote');
-    expect(url.toString()).toBe('https://worker.example.com/finnhub/quote');
+  it('prefers injected runtime worker origin', async () => {
+    (globalWithWindow as any).__VITE_WORKER_ORIGIN__ = 'https://worker.example.com ';
+    const mod = await import('./config');
+    expect(mod.WORKER_ORIGIN).toBe('https://worker.example.com');
   });
 
-  it('preserves worker path prefixes', () => {
-    __setWorkerOriginForTests('https://proxy.example.com/worker');
-    const url = createWorkerUrl('/finnhub/quote');
-    expect(url.toString()).toBe('https://proxy.example.com/worker/finnhub/quote');
-  });
-
-  it('handles trailing slashes on the worker origin path', () => {
-    __setWorkerOriginForTests('https://proxy.example.com/worker/');
-    const url = createWorkerUrl('/ws');
-    expect(url.toString()).toBe('https://proxy.example.com/worker/ws');
+  it('builds absolute worker URLs', async () => {
+    const mod = await import('./config');
+    expect(mod.wurl('/finnhub/quote')).toBe('https://example.com/finnhub/quote');
+    expect(mod.wurl('finnhub/stock/candle')).toBe('https://example.com/finnhub/stock/candle');
   });
 });
-

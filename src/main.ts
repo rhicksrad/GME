@@ -1,6 +1,6 @@
 import 'uplot/dist/uPlot.min.css';
 
-import { MinuteOhlcAggregator } from './data/ohlc';
+import { MinuteOhlcAggregator } from './data/minuteAggregator';
 import {
   connectLive as connectWorker,
   fetchCandles as fetchWorkerCandles,
@@ -28,7 +28,7 @@ import {
   fetchCandles as fetchSimulatorCandles,
   fetchQuote as fetchSimulatorQuote,
 } from './sim/simulator';
-import { getWorkerOrigin } from './config';
+import { WORKER_ORIGIN } from './config';
 import { loadState, saveState } from './persist';
 
 interface OptionsSnapshotState {
@@ -655,7 +655,7 @@ function changeSymbol(next: string) {
 }
 
 function formatWorkerOrigin(): string {
-  const origin = getWorkerOrigin();
+  const origin = WORKER_ORIGIN;
   if (!origin) {
     return window.location.origin;
   }

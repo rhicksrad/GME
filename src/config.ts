@@ -1,58 +1,26 @@
+// src/config.ts
+// Runtime worker origin. Use absolute URL to the Cloudflare Worker.
+// Example: "https://gme-radar-rhicksrad.workers.dev"
+const ENV_ORIGIN = (globalThis as any).__VITE_WORKER_ORIGIN__ || (typeof window !== "undefined" ? (window as any).VITE_WORKER_ORIGIN : "");
+
+const FALLBACK_LOCATION = typeof location !== "undefined"
+  ? location
+  : ({ protocol: "https:", host: "localhost" } as Location);
+
+// If undefined at runtime, default to same-origin root (not the /GME base path).
+// This prevents "/GME/finnhub/…" which 404s on GitHub Pages.
+export const WORKER_ORIGIN: string =
+  typeof ENV_ORIGIN === "string" && ENV_ORIGIN.trim().length
+    ? ENV_ORIGIN.trim()
+    : `${FALLBACK_LOCATION.protocol}//${FALLBACK_LOCATION.host}`;
+
+export function wurl(path: string): string {
+  // Always resolve against origin root, never relative to /GME/*
+  return new URL(path.startsWith("/") ? path : `/${path}`, WORKER_ORIGIN).toString();
+}
+
 export interface FeatureFlags {
   demoOptionsFallback: boolean;
-}
-
-let cachedOrigin: string | null = null;
-
-export function getWorkerOrigin(): string {
-  if (cachedOrigin != null) {
-    return cachedOrigin;
-  }
-  if (typeof window === 'undefined') {
-    cachedOrigin = '';
-    return cachedOrigin;
-  }
-  const raw = (import.meta.env.VITE_WORKER_ORIGIN as string | undefined)?.trim() ?? '';
-  cachedOrigin = raw.length > 0 ? raw : window.location.origin;
-  return cachedOrigin;
-}
-
-function getDefaultBase(): string {
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    return window.location.origin;
-  }
-  return 'http://localhost';
-}
-
-function normaliseBasePath(pathname: string): string {
-  if (pathname === '/') {
-    return '';
-  }
-  return pathname.replace(/\/$/, '');
-}
-
-export function createWorkerUrl(path: string): URL {
-  const fallbackBase = getDefaultBase();
-  const origin = getWorkerOrigin();
-  if (!origin) {
-    return new URL(path, fallbackBase);
-  }
-  try {
-    const base = new URL(origin, fallbackBase);
-    if (!path.startsWith('/')) {
-      return new URL(path, base);
-    }
-    const url = new URL(base.toString());
-    const basePath = normaliseBasePath(base.pathname);
-    url.pathname = `${basePath}${path}` || '/';
-    return url;
-  } catch {
-    return new URL(path, fallbackBase);
-  }
-}
-
-export function __setWorkerOriginForTests(origin: string | null): void {
-  cachedOrigin = origin;
 }
 
 export const features: FeatureFlags = {
