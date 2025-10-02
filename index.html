@@ -5,440 +5,56 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GME Radar</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" />
     <script type="module" src="/src/main.ts" defer></script>
     <style>
       :root {
         color-scheme: dark;
-        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         background: #0f172a;
         color: #e2e8f0;
       }
-
-      * {
-        box-sizing: border-box;
-      }
-
+      * { box-sizing: border-box; }
       body {
         margin: 0;
         min-height: 100vh;
         display: flex;
-        flex-direction: column;
+        align-items: center;
+        justify-content: center;
         background: radial-gradient(circle at top, rgba(56, 189, 248, 0.15), transparent 60%), #020617;
       }
-
-      a {
-        color: inherit;
-      }
-
       #app {
-        display: flex;
-        flex-direction: column;
-        min-height: 100vh;
-      }
-
-      header {
-        padding: 1rem clamp(1rem, 2vw, 2.5rem);
-        border-bottom: 1px solid rgba(148, 163, 184, 0.25);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 1.5rem;
-        background: rgba(15, 23, 42, 0.9);
-        backdrop-filter: blur(6px);
-        position: sticky;
-        top: 0;
-        z-index: 2;
-      }
-
-      .header-title {
-        font-size: clamp(1.25rem, 2vw, 1.75rem);
-        margin: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-      }
-
-      .header-title span:last-child {
-        font-size: 0.95rem;
-        font-weight: 400;
-        color: #94a3b8;
-      }
-
-      .header-controls {
-        display: flex;
-        align-items: flex-end;
-        gap: 1rem;
-      }
-
-      .symbol-form {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-      }
-
-      .symbol-form label {
-        font-size: 0.75rem;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        color: #93c5fd;
-      }
-
-      .symbol-form input {
-        width: 6rem;
-        padding: 0.4rem 0.6rem;
-        border-radius: 0.5rem;
-        border: 1px solid rgba(148, 163, 184, 0.35);
-        background: rgba(15, 23, 42, 0.8);
-        color: inherit;
-      }
-
-      .symbol-form input:focus-visible {
-        outline: 2px solid #38bdf8;
-        outline-offset: 2px;
-      }
-
-      .symbol-form small {
-        font-size: 0.7rem;
-        color: #64748b;
-      }
-
-      .metrics {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 1rem;
-        align-items: baseline;
-      }
-
-      .metrics strong {
-        font-size: clamp(1.5rem, 2.5vw, 2.1rem);
-      }
-
-      .metrics small {
-        font-size: 0.85rem;
-        color: #94a3b8;
-      }
-
-      .dashboard {
-        flex: 1;
-        display: grid;
-        gap: 1rem;
-        padding: clamp(1rem, 2vw, 2.5rem);
-        grid-template-columns: minmax(0, 2fr) minmax(0, 1.35fr);
-        grid-template-rows: minmax(0, 1fr) minmax(0, 0.9fr) auto;
-        grid-template-areas:
-          'price options'
-          'volume options'
-          'signals options';
-      }
-
-      .panel-price { grid-area: price; }
-      .panel-volume { grid-area: volume; }
-      .panel-options { grid-area: options; }
-      .panel-signals { grid-area: signals; }
-
-      @media (max-width: 960px) {
-        header {
-          flex-direction: column;
-          align-items: flex-start;
-        }
-        .dashboard {
-          grid-template-columns: minmax(0, 1fr);
-          grid-template-rows: repeat(4, auto);
-          grid-template-areas:
-            'price'
-            'volume'
-            'signals'
-            'options';
-        }
-      }
-
-      .panel {
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        border-radius: 0.75rem;
-        padding: 1rem;
-        background: rgba(15, 23, 42, 0.75);
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-        min-height: 0;
-        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.35);
-      }
-
-      .panel h2 {
-        margin: 0;
-        font-size: 1rem;
-        font-weight: 600;
-        letter-spacing: 0.01em;
-      }
-
-      .panel-options {
-        gap: 1rem;
-      }
-
-      .panel-options h3 {
-        margin: 0;
-        font-size: 0.95rem;
-        letter-spacing: 0.03em;
-        text-transform: uppercase;
-        color: #a5b4fc;
-      }
-
-      .chart-wrapper {
-        position: relative;
-        flex: 1;
-        min-height: 240px;
-        display: flex;
-      }
-
-      .chart-wrapper canvas,
-      .chart-wrapper svg {
-        width: 100% !important;
-        height: 100% !important;
-      }
-
-      .heatmap-wrapper {
-        overflow-x: auto;
-      }
-
-      .heatmap-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.8rem;
-      }
-
-      .heatmap-table th,
-      .heatmap-table td {
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        padding: 0.5rem;
-        text-align: left;
-      }
-
-      .heatmap-table th {
-        font-weight: 600;
-        color: #cbd5f5;
-        background: rgba(30, 41, 59, 0.65);
-      }
-
-      .heatmap-cell {
-        border-radius: 0.5rem;
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-        min-width: 110px;
-      }
-
-      .heatmap-cell strong {
-        font-size: 0.85rem;
-      }
-
-      .heatmap-cell small {
-        font-size: 0.7rem;
-        color: #e2e8f0;
-      }
-
-      .heatmap-table td.empty {
-        text-align: center;
-        color: #94a3b8;
-        padding: 1rem;
-      }
-
-      .totals-strip {
-        display: grid;
-        gap: 0.5rem;
-      }
-
-      .totals-item {
-        background: rgba(30, 41, 59, 0.6);
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        border-radius: 0.6rem;
-        padding: 0.6rem 0.75rem;
-        display: grid;
-        gap: 0.25rem;
-        font-size: 0.8rem;
-      }
-
-      .unusual-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.8rem;
-      }
-
-      .unusual-table th,
-      .unusual-table td {
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        padding: 0.4rem 0.5rem;
-        text-align: left;
-      }
-
-      .unusual-table tbody tr:hover {
-        background: rgba(56, 189, 248, 0.12);
-      }
-
-      .flags-legend {
-        margin: 0;
-        font-size: 0.7rem;
-        color: #94a3b8;
-      }
-
-      .signals-list {
-        display: grid;
-        grid-template-columns: auto 1fr;
-        gap: 0.5rem 1.25rem;
-        font-size: 0.85rem;
-      }
-
-      .signals-list dt {
-        color: #94a3b8;
-      }
-
-      .alerts-block {
-        margin-top: auto;
-        padding: 0.75rem;
-        border-radius: 0.75rem;
-        background: rgba(30, 41, 59, 0.55);
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-      }
-
-      .alerts-block strong {
-        font-size: 0.8rem;
-        letter-spacing: 0.05em;
-        color: #a5b4fc;
-        text-transform: uppercase;
-      }
-
-      .alerts-list {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        display: grid;
-        gap: 0.35rem;
-        max-height: 120px;
-        overflow-y: auto;
-      }
-
-      .alert-item {
-        display: grid;
-        grid-template-columns: auto 1fr;
-        gap: 0.35rem 0.75rem;
-        align-items: baseline;
-        font-size: 0.75rem;
-      }
-
-      .alert-item time {
-        color: #64748b;
-        font-size: 0.7rem;
-      }
-
-      .alert-detail {
-        grid-column: 2 / 3;
-        color: #cbd5f5;
-      }
-
-      footer {
-        padding: 0.75rem clamp(1rem, 2vw, 2.5rem);
-        border-top: 1px solid rgba(148, 163, 184, 0.15);
+        width: min(960px, 90vw);
+        height: min(540px, 70vh);
         background: rgba(15, 23, 42, 0.85);
-        font-size: 0.85rem;
+        border-radius: 1rem;
+        padding: 1.5rem;
+        box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.45);
+        display: flex;
+        flex-direction: column;
+      }
+      header {
         display: flex;
         justify-content: space-between;
-        align-items: center;
-        gap: 1rem;
-        flex-wrap: wrap;
+        align-items: baseline;
+        margin-bottom: 1rem;
       }
-
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        padding: 0.2rem 0.55rem;
-        border-radius: 999px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
+      header h1 {
+        margin: 0;
+        font-size: 1.5rem;
       }
-
-      .badge.live { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
-      .badge.reconnecting { background: rgba(250, 204, 21, 0.15); color: #facc15; }
-      .badge.offline { background: rgba(248, 113, 113, 0.1); color: #fca5a5; }
-      .badge.demo { background: rgba(147, 197, 253, 0.15); color: #93c5fd; }
-
-      .badge.provider {
-        background: rgba(56, 189, 248, 0.18);
-        color: #bae6fd;
-        font-size: 0.7rem;
-      }
-
-      .badge.provider.delayed {
-        background: rgba(250, 204, 21, 0.18);
-        color: #fde68a;
-      }
-
-      .badge.provider.error {
-        background: rgba(248, 113, 113, 0.18);
-        color: #fecaca;
-      }
-
-      .banner {
-        width: 100%;
-        padding: 0.75rem clamp(1rem, 2vw, 2.5rem);
-        background: rgba(248, 113, 113, 0.15);
-        color: #fca5a5;
-        border-bottom: 1px solid rgba(248, 113, 113, 0.25);
-        font-size: 0.9rem;
-      }
-
-      .status-line {
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 0.6rem 1rem;
-      }
-
-      .status-line button {
-        appearance: none;
-        border: 1px solid rgba(148, 163, 184, 0.35);
-        background: transparent;
-        color: inherit;
-        border-radius: 999px;
-        padding: 0.35rem 0.65rem;
-        font-size: 0.75rem;
-        cursor: pointer;
-      }
-
-      .status-line button:focus-visible {
-        outline: 2px solid #38bdf8;
-        outline-offset: 2px;
-      }
-
-      .status-line button:hover {
-        border-color: rgba(148, 163, 184, 0.8);
-      }
-
-      .status-line time {
-        color: #94a3b8;
-      }
-
-      .worker-label,
-      .options-label {
-        font-size: 0.75rem;
-        color: #cbd5f5;
-      }
-
-      .small {
-        font-size: 0.75rem;
-        color: #94a3b8;
+      #price-host {
+        flex: 1;
+        min-height: 0;
       }
     </style>
   </head>
   <body>
-    <noscript>
-      <div class="banner">JavaScript is required for GME Radar.</div>
-    </noscript>
-    <div id="app"></div>
+    <div id="app">
+      <header>
+        <h1>GME Radar</h1>
+        <span>Live price</span>
+      </header>
+      <div id="price-host"></div>
+    </div>
   </body>
 </html>

@@ -1,62 +1,73 @@
-Title: GME Radar agent guide (Phase 3)
+Title: GME Radar agent guide (Phase 4, GME-only)
 
-What you’re maintaining
+Scope
 
-A static site that pulls live equities via a Cloudflare Worker proxy and builds options analytics without exposing secrets.
+Maintain a static site and a Cloudflare Worker that serve one symbol: GME.
 
-Providers:
-
-Equities: /finnhub/* REST and /ws
-Options primary: /poly/options/chain (server-injected key)
-Options fallback: /yahoo/options (delayed)
+No trading, no multi-symbol features, no compare views.
 
 Golden rules
 
-Never embed API keys in browser code.
-All HTTP calls go through the Worker; builds must succeed with zero secrets.
-If any upstream is down/429, back off and keep UI rendering; prefer stale>blank.
+Never expose API keys in client code.
 
-Runtime config
+All market access goes through the Worker.
 
-VITE_WORKER_ORIGIN optional. Default to same origin.
-Symbol comes from ?symbol=; default GME.
+Pages builds must not depend on secrets or live providers.
+
+Prefer stale-but-valid UI over blank screens.
+
+Runtime architecture
+
+Cron jobs push normalized data into KV and publish to LiveBus DO.
+
+Browser connects to /sse/alerts and receives quote, bar, options, alert.
+
+Backfill endpoints read from KV on page load for instant charts.
 
 Data contracts
 
 Quote: /finnhub/quote → {c,d,dp,h,l,o,pc,t}
-Candles: /finnhub/stock/candle → arrays {c,h,l,o,s,t,v}
-Options chain normalized row:
 
-{ ts, exp, type, strike, bid?, ask?, last?, mid?, volume?, openInterest?, iv? }
+Bars: array of { t, o, h, l, c, v } minute OHLC
 
-Aggregations:
+Options normalized row: { ts, exp, type, strike, bid?, ask?, last?, mid?, volume?, openInterest?, iv? }
 
-Expiry totals: calls/puts volume, OI
-Moneyness matrix: deep ITM/ITM/ATM/OTM/deep OTM vs spot
-Alerts emitted with payload and source contract IDs
+Alerts: { kind: "IVSpike" | "UnusualVol" | "SweepHeuristic", ts, details }
 
-Error handling playbook
+Ops playbook
 
-REST 429/5xx: exponential backoff with jitter, cap 30s
-Polygon 501/no key: switch to Yahoo fallback
-If both options sources fail: switch to demo data and show “DELAYED/DEMO” badge
+If alerts stop:
+
+Check cron logs
+
+Hit /sse/alerts and confirm heartbeats
+
+Inspect opt:GME:YYYY-MM-DD and q:GME:YYYY-MM-DD KV keys
+
+If backfill is empty:
+
+Hit /backfill/quotes?minutes=390&force=1 to synthesize from candles
+
+If rate-limited:
+
+Jobs back off with jitter and keep last-good snapshot
+
+Rollback:
+
+Disable SSE in src/config.ts and the site falls back to REST polling + simulator
 
 CI rules
 
-pnpm 9.12.1; Node 20; cache pnpm
-No env required at build; never gate build on provider availability
+Use pnpm 9.12.1 and Node 20 with cache
+
+No env-gated steps; builds must pass without secrets
+
 Lint/typecheck must pass
 
-Common pitfalls
+Don’ts
 
-Missing nocache=1 on /finnhub/quote yields stale quotes
-Multiple WS connections after hot-reload; ensure cleanup
-Large JSON inlined by bundler; keep demo data in public/
+Don’t add query params for other tickers
 
-Verification checklist
+Don’t open direct provider connections from the browser
 
-Heatmap updates at most every 30–60s; alerts roll in without jank
-Refresh keeps last known symbol and baselines
-Worker returns CORS-enabled JSON for both providers
-
-End agents.md.
+Don’t block UI waiting for network

@@ -2,11 +2,7 @@ import { describe, expect, afterEach, beforeEach, it } from 'vitest';
 
 import { __setWorkerOriginForTests, createWorkerUrl } from './config';
 
-interface MockWindow {
-  location: { origin: string };
-}
-
-type GlobalWithWindow = typeof globalThis & { window?: MockWindow };
+type GlobalWithWindow = typeof globalThis & { window?: Window & typeof globalThis };
 
 const globalWithWindow = globalThis as GlobalWithWindow;
 const originalWindow = globalWithWindow.window;
@@ -14,8 +10,8 @@ const originalWindow = globalWithWindow.window;
 describe('createWorkerUrl', () => {
   beforeEach(() => {
     globalWithWindow.window = {
-      location: { origin: 'http://localhost:5173' },
-    };
+      location: { origin: 'http://localhost:5173' } as unknown as Location,
+    } as unknown as Window & typeof globalThis;
     __setWorkerOriginForTests(null);
   });
 
