@@ -1,23 +1,21 @@
 # GME Radar
 
-GME Radar is a lightweight GameStop activity dashboard that renders live price action and options flow with a focus on latency-sensitive updates. It is built on Vite, TypeScript, vanilla DOM utilities, and the [uPlot](https://github.com/leeoniya/uPlot) charting library so it can be deployed on GitHub Pages or served locally.
+GME Radar is a lightweight single-page dashboard that visualises GameStop’s live quote stream and intraday tape using nothing more than Vite, TypeScript, and uPlot. The app runs entirely on static hosting and talks to a Cloudflare Worker proxy that injects the Finnhub token server-side, so the bundle never exposes credentials.
 
 ## Features
 
-- **Live equities feed** via the Finnhub WebSocket (GME symbol).
-- **Options chain snapshots** from Polygon with rate limiting and graceful retry handling.
-- **Automatic demo mode** when API keys are absent, replaying bundled price and options samples so the UI always renders.
-- **Price dashboard** with 1-minute candlesticks, running volume, and current spot/change badges.
-- **Options heatmap** grouped by expiry and moneyness buckets with tooltips for contract detail.
-- **Activity flags** including unusual volume, implied volatility spikes, sweep heuristics, and open-interest shifts.
-- **Resilient networking** with exponential reconnect/backoff for Finnhub and throttled polling for Polygon.
+- **Live Finnhub proxy** – REST polling for quotes and minute candles plus a resilient WebSocket feed, all routed through `/finnhub/*` and `/ws`.
+- **Automatic demo mode** – When the worker is unavailable the UI falls back to bundled samples replayed at 2× speed, keeping the charts populated.
+- **Intraday analytics** – Rolling VWAP, 1‑minute change, high/low range, and standard-deviation spike flags.
+- **Responsive charts** – uPlot candlesticks and volume histograms with adaptive resizing and animation throttling.
+- **GitHub Pages ready** – No build-time secrets, deterministic pnpm workflow, and a Pages deployment that works out of the box.
 
 ## Getting started
 
 ### Prerequisites
 
 - Node.js 20+
-- pnpm 9+
+- pnpm 9.12.1 (automatically installed in CI)
 
 ### Install dependencies
 
@@ -25,88 +23,74 @@ GME Radar is a lightweight GameStop activity dashboard that renders live price a
 pnpm install
 ```
 
-### Configure environment
+### Run the dev server
 
-Copy `.env.example` to `.env.local` and populate the required keys:
-
-```bash
-cp .env.example .env.local
-```
-
-```ini
-VITE_FINNHUB_TOKEN=your_finnhub_token
-VITE_POLYGON_KEY=your_polygon_key
-```
-
-Both keys are required for live mode. Without them, the app automatically loads the simulated dataset under `public/demo` and displays a warning banner.
-
-#### Obtaining keys
-
-- **Finnhub** – Create an account at [Finnhub.io](https://finnhub.io/) and request a free API key. Real-time equity trades require an upgraded plan.
-- **Polygon** – Register at [Polygon.io](https://polygon.io/), enable Options API access, and generate a REST key.
-
-### Development workflow
-
-Run the local dev server:
+The site assumes the Cloudflare Worker is reachable at the same origin. During local development set `VITE_WORKER_ORIGIN` to the worker URL (for example `http://localhost:8787`). If the worker is offline the UI drops into demo playback automatically.
 
 ```bash
-pnpm dev
+VITE_WORKER_ORIGIN=http://localhost:8787 pnpm dev
 ```
 
-Type checking and linting:
+Navigate to <http://localhost:5173>. Supply `?symbol=GME` (default) to view a different symbol once the proxy supports it.
+
+### Environment check
 
 ```bash
+VITE_WORKER_ORIGIN=http://localhost:8787 pnpm dev-check
+```
+
+The script reports whether `/finnhub/quote` is reachable and confirms the bundled demo assets, so you know if the browser will start in live or demo mode.
+
+### Type checking, linting, and tests
+
+```bash
+pnpm typecheck
+pnpm lint
+pnpm test
+# or run everything
 pnpm check
 ```
 
-Run the Vitest unit tests:
-
-```bash
-pnpm test
-```
-
-Build the production bundle:
+### Production build and preview
 
 ```bash
 pnpm build
-```
-
-Preview the production bundle locally:
-
-```bash
 pnpm preview
 ```
 
-Use the environment helper to confirm key detection:
+## Data flow
 
-```bash
-pnpm dev-check
-```
+1. **Primary path** – `src/data/workerClient.ts` targets the Worker REST and WebSocket endpoints. Quotes poll every 3 s with `nocache=1`, minute candles refresh every 20 s, and the WS client performs exponential backoff with jitter.
+2. **Aggregation** – `src/data/ohlc.ts` rolls all trades into 1‑minute OHLC bars (last 390 minutes) to power the charts and analytics.
+3. **Signals** – `src/signals.ts` computes VWAP, 1‑minute change, daily high/low, and a 60-minute sigma spike indicator.
+4. **UI** – `src/ui/charts.ts` renders uPlot candlesticks and volume columns while `src/ui/status.ts` manages the status footer and banner.
+5. **Fallback** – `src/sim/simulator.ts` replays `public/demo/*.json` at 2× speed whenever both REST and WS fail for more than 10 s.
 
-### Demo mode
+## Cloudflare Worker proxy
 
-When either API key is missing, the UI switches to demo mode, displays an orange banner, and streams the JSON payloads under `public/demo`. The simulator reproduces realistic price ticks, minute bars, and option flow bursts so charts and signals remain active. This mode is also used in CI so builds never fail due to missing secrets.
+All network calls originate from the browser to:
 
-### Deployment
+- `GET /finnhub/quote?symbol=SYM&nocache=1`
+- `GET /finnhub/stock/candle?symbol=SYM&resolution=1&from=…&to=…`
+- `WS /ws` sending `{ "type": "subscribe", "symbol": "SYM" }`
 
-The project builds to `dist/` with a dynamic `base` inferred from the GitHub repository name, making it suitable for GitHub Pages. A workflow is included under `.github/workflows/pages.yml` that installs pnpm correctly, runs the build, and publishes the artifact without needing API secrets (demo mode kicks in automatically).
+The Worker injects the Finnhub token and handles upstream rate limits. No Finnhub keys live in this repository or the static bundle.
 
-## Architecture overview
+## Demo mode
 
-- `src/data/finnhub.ts` – Resilient WebSocket client with jittered exponential backoff and heartbeat pings.
-- `src/data/polygon.ts` – Throttled REST poller with Retry-After support.
-- `src/data/cache.ts` – Fixed-size ring buffers that store ticks, minute bars, and option snapshots.
-- `src/data/simulator.ts` – Local playback utilities for the demo datasets.
-- `src/signals.ts` – Pure analytics for moneyness bucketing and options flow heuristics.
-- `src/ui/` – Lightweight DOM helpers and uPlot chart setup.
+If the Worker responds with 5xx/429 errors or is unreachable the app swaps to the simulator. A “DEMO” badge and banner explain the state, while the simulator continues to stream quote and trade activity so charts remain useful in CI, offline development, and GitHub Pages.
 
-## Next steps
+## Deployment
 
-- Extend demo data with additional trading sessions.
-- Persist preferred theme and layout options in local storage.
-- Add websocket multiplexing for additional tickers or option trades when data is available.
-- Surface more Greeks (delta, gamma) alongside bucket metrics.
+The GitHub Actions workflow under `.github/workflows/pages.yml` installs pnpm 9.12.1, builds with Node 20, uploads the `dist` artifact, and deploys to GitHub Pages without requiring any secrets. The Vite base path adjusts automatically based on `GITHUB_REPOSITORY`.
+
+## Known limits & next steps
+
+- Only one symbol is supported per page; extend the worker if more tickers are needed.
+- Spike detection is a basic sigma check—consider augmenting with volume and volatility context.
+- The simulator ships with a short sample session; add more sessions for richer demos.
+- Accessibility is monitored manually; future iterations should add automated a11y tests.
 
 ## License
 
-This project inherits the repository license.
+This project inherits the repository licence.

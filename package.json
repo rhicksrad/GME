@@ -1,6 +1,6 @@
 {
   "name": "gme-radar",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -12,7 +12,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint \"src/**/*.{ts,tsx}\" \"scripts/**/*.mjs\"",
+    "lint": "eslint \"src/**/*.ts\" \"scripts/**/*.mjs\"",
     "check": "pnpm run typecheck && pnpm run lint",
     "test": "vitest run",
     "dev-check": "node scripts/dev-check.mjs"
@@ -31,5 +31,5 @@
     "vite": "^5.2.0",
     "vitest": "^1.5.0"
   },
-  "packageManager": "pnpm@10.5.2"
+  "packageManager": "pnpm@9.12.1"
 }

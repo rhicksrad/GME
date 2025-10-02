@@ -1,14 +1,229 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GME Radar</title>
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" />
+    <script type="module" src="/src/main.ts" defer></script>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #0f172a;
+        color: #e2e8f0;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      #app {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+
+      header {
+        padding: 1rem clamp(1rem, 2vw, 2.5rem);
+        border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        background: rgba(15, 23, 42, 0.9);
+        backdrop-filter: blur(6px);
+        position: sticky;
+        top: 0;
+        z-index: 2;
+      }
+
+      header h1 {
+        font-size: clamp(1.25rem, 2vw, 1.75rem);
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+
+      header h1 span:last-child {
+        font-size: 0.95rem;
+        font-weight: 400;
+        color: #94a3b8;
+      }
+
+      main {
+        flex: 1;
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) auto;
+        gap: 1rem;
+        padding: clamp(1rem, 2vw, 2.5rem);
+      }
+
+      @media (max-width: 960px) {
+        main {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: auto auto auto;
+        }
+        .panel {
+          grid-column: auto !important;
+          grid-row: auto !important;
+        }
+      }
+
+      .panel {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 0.75rem;
+        padding: 1rem;
+        background: rgba(15, 23, 42, 0.7);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.45);
+      }
+
+      .panel h2 {
+        margin: 0 0 0.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+
+      .chart-container {
+        flex: 1;
+        min-height: 240px;
+      }
+
+      footer {
+        padding: 0.75rem clamp(1rem, 2vw, 2.5rem);
+        border-top: 1px solid rgba(148, 163, 184, 0.15);
+        background: rgba(15, 23, 42, 0.85);
+        font-size: 0.85rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        align-items: baseline;
+      }
+
+      .metrics strong {
+        font-size: clamp(1.5rem, 2.5vw, 2.1rem);
+      }
+
+      .metrics small {
+        font-size: 0.85rem;
+        color: #94a3b8;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .badge.live {
+        background: rgba(34, 197, 94, 0.15);
+        color: #4ade80;
+      }
+
+      .badge.reconnecting {
+        background: rgba(250, 204, 21, 0.15);
+        color: #facc15;
+      }
+
+      .badge.offline {
+        background: rgba(248, 113, 113, 0.1);
+        color: #fca5a5;
+      }
+
+      .badge.demo {
+        background: rgba(147, 197, 253, 0.15);
+        color: #93c5fd;
+      }
+
+      .banner {
+        width: 100%;
+        padding: 0.75rem clamp(1rem, 2vw, 2.5rem);
+        background: rgba(248, 113, 113, 0.15);
+        color: #fca5a5;
+        border-bottom: 1px solid rgba(248, 113, 113, 0.25);
+        font-size: 0.9rem;
+      }
+
+      .chart-wrapper {
+        position: relative;
+        flex: 1;
+        display: flex;
+        min-height: 240px;
+      }
+
+      .chart-wrapper canvas,
+      .chart-wrapper svg {
+        width: 100% !important;
+        height: 100% !important;
+      }
+
+      .status-line {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .status-line button {
+        appearance: none;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: transparent;
+        color: inherit;
+        border-radius: 999px;
+        padding: 0.35rem 0.65rem;
+        font-size: 0.75rem;
+        cursor: pointer;
+      }
+
+      .status-line button:focus-visible {
+        outline: 2px solid #38bdf8;
+        outline-offset: 2px;
+      }
+
+      .status-line button:hover {
+        border-color: rgba(148, 163, 184, 0.8);
+      }
+
+      .status-line time {
+        color: #94a3b8;
+      }
+    </style>
   </head>
   <body>
+    <noscript>
+      <div class="banner">JavaScript is required for GME Radar.</div>
+    </noscript>
     <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
