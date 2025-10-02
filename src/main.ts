@@ -158,6 +158,7 @@ let lastChain: OptionsSnapshotState | null = persisted?.options?.chain
   : null;
 const alertHistory = new Map<string, number>();
 let optionsInFlight = false;
+let bootGeneration = 0;
 
 statusUi.setMode('live');
 statusUi.setConnection('connecting');
@@ -192,15 +193,19 @@ symbolForm.addEventListener('submit', (event) => {
 void bootstrap();
 
 async function bootstrap() {
+  const generation = ++bootGeneration;
   try {
-    await loadWorker();
+    await loadWorker(generation);
   } catch (error) {
     console.warn('Worker unavailable, switching to demo', error);
-    await enterDemo('Worker unavailable');
+    if (generation !== bootGeneration) {
+      return;
+    }
+    await enterDemo('Worker unavailable', generation);
   }
 }
 
-async function loadWorker() {
+async function loadWorker(generation: number) {
   mode = 'worker';
   statusUi.setMode('live');
   statusUi.setBanner(null);
@@ -210,13 +215,22 @@ async function loadWorker() {
     fetchWorkerQuote(symbol),
     fetchWorkerCandles(symbol, now - 390 * 60_000, now, '1'),
   ]);
+  if (generation !== bootGeneration) {
+    return;
+  }
   aggregator = new MinuteOhlcAggregator(390);
   const bars = convertCandles(candles);
   aggregator.seed(bars);
   applyQuote(quote);
   scheduleUpdate();
   statusUi.setConnection('connected');
+  if (generation !== bootGeneration) {
+    return;
+  }
   connectStream(connectWorker(symbol));
+  if (generation !== bootGeneration) {
+    return;
+  }
   quoteTimer = window.setInterval(() => {
     void refreshQuote();
   }, 3000);
@@ -226,11 +240,20 @@ async function loadWorker() {
   optionsTimer = window.setInterval(() => {
     void refreshOptions();
   }, 45000);
+  if (generation !== bootGeneration) {
+    return;
+  }
   await refreshOptions(true);
+  if (generation !== bootGeneration) {
+    return;
+  }
   startHealthCheck();
 }
 
-async function enterDemo(reason: string) {
+async function enterDemo(reason: string, generation = bootGeneration) {
+  if (generation !== bootGeneration) {
+    return;
+  }
   mode = 'demo';
   statusUi.setMode('demo');
   statusUi.setBanner(`Demo mode: ${reason}`, 'info');
@@ -239,11 +262,20 @@ async function enterDemo(reason: string) {
   connection?.close();
   connection = null;
   const [quote, candles] = await Promise.all([fetchSimulatorQuote(symbol), fetchSimulatorCandles(symbol)]);
+  if (generation !== bootGeneration) {
+    return;
+  }
   aggregator = new MinuteOhlcAggregator(390);
   aggregator.seed(candles);
   applyQuote(quote);
   scheduleUpdate();
+  if (generation !== bootGeneration) {
+    return;
+  }
   connectStream(connectSimulator(symbol));
+  if (generation !== bootGeneration) {
+    return;
+  }
   if (optionsTimer == null) {
     optionsTimer = window.setInterval(() => {
       void refreshOptions();
