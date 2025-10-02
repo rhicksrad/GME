@@ -1,12 +1,19 @@
 import uPlot from 'uplot';
 
 import type { MinuteBar } from '../types';
+import { MAX_BARS } from '../lib/series';
 
 function toSeconds(timestamp: number): number {
   return Math.floor(timestamp / 1000);
 }
 
-const LIMIT = 390;
+function clampAligned(data: number[][]): number[][] {
+  if (data.length === 0 || data[0].length <= MAX_BARS) {
+    return data;
+  }
+  const start = data[0].length - MAX_BARS;
+  return data.map((arr) => arr.slice(start));
+}
 
 function buildPriceData(bars: MinuteBar[]): uPlot.AlignedData {
   const x: number[] = [];
@@ -21,7 +28,7 @@ function buildPriceData(bars: MinuteBar[]): uPlot.AlignedData {
     low.push(bar.l);
     close.push(bar.c);
   }
-  return [x, open, high, low, close];
+  return clampAligned([x, open, high, low, close]) as uPlot.AlignedData;
 }
 
 function buildVolumeData(bars: MinuteBar[]): uPlot.AlignedData {
@@ -31,7 +38,7 @@ function buildVolumeData(bars: MinuteBar[]): uPlot.AlignedData {
     x.push(toSeconds(bar.t));
     volume.push(bar.v);
   }
-  return [x, volume];
+  return clampAligned([x, volume]) as uPlot.AlignedData;
 }
 
 function drawCandles(u: uPlot) {
@@ -166,8 +173,7 @@ export function createPriceChart(container: HTMLElement): PriceChartHandle {
   const observer = createResizeObserver(chart, container);
   return {
     update(bars: MinuteBar[]) {
-      const trimmed = bars.length > LIMIT ? bars.slice(-LIMIT) : bars;
-      chart.setData(buildPriceData(trimmed));
+      chart.setData(buildPriceData(bars));
     },
     destroy() {
       observer.disconnect();
@@ -204,8 +210,7 @@ export function createVolumeChart(container: HTMLElement): VolumeChartHandle {
   const observer = createResizeObserver(chart, container);
   return {
     update(bars: MinuteBar[]) {
-      const trimmed = bars.length > LIMIT ? bars.slice(-LIMIT) : bars;
-      chart.setData(buildVolumeData(trimmed));
+      chart.setData(buildVolumeData(bars));
     },
     destroy() {
       observer.disconnect();

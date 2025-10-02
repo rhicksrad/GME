@@ -1,7 +1,13 @@
 // src/config.ts
 // Runtime worker origin. Use absolute URL to the Cloudflare Worker.
 // Example: "https://gme-radar-rhicksrad.workers.dev"
-const ENV_ORIGIN = (globalThis as any).__VITE_WORKER_ORIGIN__ || (typeof window !== "undefined" ? (window as any).VITE_WORKER_ORIGIN : "");
+type GlobalWithOrigin = typeof globalThis & { __VITE_WORKER_ORIGIN__?: string };
+type WindowWithOrigin = typeof window & { VITE_WORKER_ORIGIN?: string };
+
+const globalEnv = globalThis as GlobalWithOrigin;
+const windowEnv = typeof window !== "undefined" ? (window as WindowWithOrigin) : undefined;
+
+const ENV_ORIGIN = globalEnv.__VITE_WORKER_ORIGIN__ || windowEnv?.VITE_WORKER_ORIGIN || "";
 
 const FALLBACK_LOCATION = typeof location !== "undefined"
   ? location

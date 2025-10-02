@@ -1,54 +1,65 @@
+import { MAX_BARS, replaceOrAppendBar, minuteKey } from '../lib/series';
+
 export interface Bar { t: number; o: number; h: number; l: number; c: number; v: number }
 
 export class Bars {
-  private map = new Map<number, Bar>(); // keyed by minute epoch ms
-  private order: number[] = [];
-  private cap = 390;
+  public t: number[] = [];
+  public o: number[] = [];
+  public h: number[] = [];
+  public l: number[] = [];
+  public c: number[] = [];
+  public v: number[] = [];
+  private cap = MAX_BARS;
 
-  setCap(n: number) { this.cap = Math.max(1, n|0); }
+  setCap(n: number) {
+    this.cap = Math.max(1, n | 0);
+  }
 
+  /** Backfill candles: replace-if-same-t else append, then clamp */
   applyBackfill(b: Bar) {
-    if (!this.map.has(b.t)) this.insert(b);
+    replaceOrAppendBar(this.t, this.o, this.h, this.l, this.c, this.v, b, this.cap);
   }
 
+  /** Live trades → roll into current minute bar */
   upsertTrade(tsMs: number, price: number, size = 0) {
-    const minute = Math.floor(tsMs / 60000) * 60000;
-    const existing = this.map.get(minute);
-    if (existing) {
-      existing.h = Math.max(existing.h, price);
-      existing.l = Math.min(existing.l, price);
-      existing.c = price;
-      existing.v += size;
-    } else {
-      this.insert({ t: minute, o: price, h: price, l: price, c: price, v: size });
+    const t = minuteKey(tsMs);
+    const n = this.t.length;
+    if (n && this.t[n - 1] === t) {
+      // mutate last
+      this.h[n - 1] = Math.max(this.h[n - 1], price);
+      this.l[n - 1] = Math.min(this.l[n - 1], price);
+      this.c[n - 1] = price;
+      this.v[n - 1] += size;
+      return;
     }
-  }
-
-  private insert(b: Bar) {
-    this.map.set(b.t, { ...b });
-    // keep order sorted but cheap: append then sort occasionally
-    this.order.push(b.t);
-    if (this.order.length > 1 && this.order[this.order.length - 2] > b.t) {
-      this.order.sort((a, z) => a - z);
-    }
-    // enforce cap
-    while (this.order.length > this.cap) {
-      const oldest = this.order.shift()!;
-      this.map.delete(oldest);
-    }
+    replaceOrAppendBar(
+      this.t,
+      this.o,
+      this.h,
+      this.l,
+      this.c,
+      this.v,
+      { t, o: price, h: price, l: price, c: price, v: size },
+      this.cap,
+    );
   }
 
   arrays() {
-    const t: number[] = [];
-    const c: number[] = [];
-    for (const ts of this.order) {
-      const b = this.map.get(ts)!;
-      t.push(b.t); c.push(b.c);
-    }
-    return { t, c };
+    return { t: this.t, o: this.o, h: this.h, l: this.l, c: this.c, v: this.v };
   }
 
   values(): Bar[] {
-    return this.order.map((ts) => ({ ...this.map.get(ts)! }));
+    const result: Bar[] = [];
+    for (let i = 0; i < this.t.length; i += 1) {
+      result.push({
+        t: this.t[i],
+        o: this.o[i],
+        h: this.h[i],
+        l: this.l[i],
+        c: this.c[i],
+        v: this.v[i],
+      });
+    }
+    return result;
   }
 }
