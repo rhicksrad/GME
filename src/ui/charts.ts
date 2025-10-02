@@ -16,12 +16,14 @@ function clampAligned(data: number[][]): number[][] {
 }
 
 function buildPriceData(bars: MinuteBar[]): uPlot.AlignedData {
+  const start = Math.max(0, bars.length - MAX_BARS);
   const x: number[] = [];
   const open: number[] = [];
   const high: number[] = [];
   const low: number[] = [];
   const close: number[] = [];
-  for (const bar of bars) {
+  for (let i = start; i < bars.length; i += 1) {
+    const bar = bars[i];
     x.push(toSeconds(bar.t));
     open.push(bar.o);
     high.push(bar.h);
@@ -32,9 +34,11 @@ function buildPriceData(bars: MinuteBar[]): uPlot.AlignedData {
 }
 
 function buildVolumeData(bars: MinuteBar[]): uPlot.AlignedData {
+  const start = Math.max(0, bars.length - MAX_BARS);
   const x: number[] = [];
   const volume: number[] = [];
-  for (const bar of bars) {
+  for (let i = start; i < bars.length; i += 1) {
+    const bar = bars[i];
     x.push(toSeconds(bar.t));
     volume.push(bar.v);
   }
