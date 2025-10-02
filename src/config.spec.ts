@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-type GlobalWithWindow = typeof globalThis & { window?: Window & typeof globalThis };
+type MockWindow = Window & typeof globalThis & { VITE_WORKER_ORIGIN?: string };
+type GlobalWithWindow = typeof globalThis & { window?: MockWindow; __VITE_WORKER_ORIGIN__?: string };
 const globalWithWindow = globalThis as GlobalWithWindow;
 const originalWindow = globalWithWindow.window;
 const originalLocation = globalWithWindow.location;
@@ -8,11 +9,11 @@ const originalLocation = globalWithWindow.location;
 describe('config', () => {
   beforeEach(() => {
     vi.resetModules();
-    delete (globalWithWindow as any).__VITE_WORKER_ORIGIN__;
+    delete globalWithWindow.__VITE_WORKER_ORIGIN__;
     if (!globalWithWindow.window) {
-      globalWithWindow.window = {} as Window & typeof globalThis;
+      globalWithWindow.window = {} as MockWindow;
     }
-    (globalWithWindow.window as any).VITE_WORKER_ORIGIN = undefined;
+    globalWithWindow.window.VITE_WORKER_ORIGIN = undefined;
     Object.defineProperty(globalWithWindow, 'location', {
       configurable: true,
       value: { protocol: 'https:', host: 'example.com' } as Location,
@@ -21,7 +22,7 @@ describe('config', () => {
 
   afterEach(() => {
     vi.resetModules();
-    delete (globalWithWindow as any).__VITE_WORKER_ORIGIN__;
+    delete globalWithWindow.__VITE_WORKER_ORIGIN__;
     if (originalWindow === undefined) {
       Reflect.deleteProperty(globalWithWindow, 'window');
     } else {
@@ -43,7 +44,7 @@ describe('config', () => {
   });
 
   it('prefers injected runtime worker origin', async () => {
-    (globalWithWindow as any).__VITE_WORKER_ORIGIN__ = 'https://worker.example.com ';
+    globalWithWindow.__VITE_WORKER_ORIGIN__ = 'https://worker.example.com ';
     const mod = await import('./config');
     expect(mod.WORKER_ORIGIN).toBe('https://worker.example.com');
   });
