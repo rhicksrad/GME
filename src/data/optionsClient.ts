@@ -1,4 +1,4 @@
-import { getWorkerOrigin } from '../config';
+import { features, getWorkerOrigin } from '../config';
 
 export interface OptRow {
   ts: number;
@@ -62,6 +62,13 @@ export async function fetchChain(symbol: string): Promise<OptionsResponse> {
     return { rows: yahooResult.payload.rows, meta };
   }
 
+  if (features.demoOptionsFallback) {
+    const demo = await loadDemoOptions(symbol);
+    if (demo) {
+      return demo;
+    }
+  }
+
   const error = yahooResult.error ?? polyResult.error ?? 'Options data unavailable';
   return {
     rows: [],
@@ -106,6 +113,51 @@ async function requestChain(path: string): Promise<RequestResult> {
     }
   }
   return { ok: false, status: 0, error: lastError ?? 'Request failed' };
+}
+
+let demoOptionsPromise: Promise<OptionsResponse | null> | null = null;
+
+function asset(path: string): string {
+  const base = (import.meta.env.BASE_URL ?? '/') as string;
+  const normalized = base.endsWith('/') ? base : `${base}/`;
+  return `${normalized}${path.replace(/^\//, '')}`;
+}
+
+async function loadDemoOptions(symbol: string): Promise<OptionsResponse | null> {
+  if (symbol.toUpperCase() !== 'GME') {
+    return null;
+  }
+  if (!demoOptionsPromise) {
+    demoOptionsPromise = (async () => {
+      try {
+        const response = await fetch(asset('demo/options.json'), {
+          headers: { Accept: 'application/json' },
+        });
+        if (!response.ok) {
+          return null;
+        }
+        const payload = (await response.json()) as {
+          rows?: OptRow[];
+          meta?: OptionsMeta;
+        };
+        const rows = Array.isArray(payload.rows)
+          ? payload.rows.map(normalizeRow).filter(Boolean) as OptRow[]
+          : [];
+        if (rows.length === 0) {
+          return null;
+        }
+        const meta: OptionsMeta = {
+          source: 'demo',
+          ...payload.meta,
+          delayed: payload.meta?.delayed ?? true,
+        };
+        return { rows, meta };
+      } catch {
+        return null;
+      }
+    })();
+  }
+  return demoOptionsPromise;
 }
 
 async function parsePayload(response: Response): Promise<OptionsResponse> {
