@@ -15,6 +15,7 @@ export interface OptionsPanelHandle {
   renderHeatmap(rows: MoneynessRow[]): void;
   renderTotals(totals: ExpiryTotals[]): void;
   renderUnusual(rows: UnusualContractRow[]): void;
+  setDisabled(disabled: boolean, reason?: string | null): void;
 }
 
 const COLUMN_LABELS: Record<MoneynessBucket, string> = {
@@ -83,7 +84,16 @@ export function createOptionsPanel(): OptionsPanelHandle {
   legend.className = 'flags-legend';
   legend.textContent = 'Flags: Vol >3× (volume spike), IV spike (>2σ move), Sweep (clustered strikes), OI Δ (open interest change).';
 
-  container.append(header, updatedLabel, heatmapWrapper, totalsStrip, unusualHeading, unusualTable, legend);
+  const content = document.createElement('div');
+  content.className = 'options-content';
+  content.append(updatedLabel, heatmapWrapper, totalsStrip, unusualHeading, unusualTable, legend);
+
+  const disabledMessage = document.createElement('div');
+  disabledMessage.className = 'panel-disabled-message';
+  disabledMessage.textContent = 'Options disabled (premium only)';
+  disabledMessage.hidden = true;
+
+  container.append(header, disabledMessage, content);
 
   function setSource(meta: { provider: string; delayed?: boolean; error?: string | null; updatedAt?: number | null }) {
     providerBadge.textContent = meta.provider.toUpperCase();
@@ -212,12 +222,20 @@ export function createOptionsPanel(): OptionsPanelHandle {
     });
   }
 
+  function setDisabled(disabled: boolean, reason?: string | null) {
+    container.classList.toggle('panel-disabled', disabled);
+    disabledMessage.hidden = !disabled;
+    disabledMessage.textContent = disabled ? reason ?? 'Options disabled (premium only)' : disabledMessage.textContent;
+    content.hidden = disabled;
+  }
+
   return {
     element: container,
     setSource,
     renderHeatmap,
     renderTotals,
     renderUnusual,
+    setDisabled,
   };
 }
 

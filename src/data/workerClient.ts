@@ -12,6 +12,8 @@ export interface Quote {
   t: number; // epoch seconds
 }
 
+export type CandleResolution = '1' | '5';
+
 export interface Candle {
   t: number; // epoch seconds
   o: number;
@@ -67,7 +69,7 @@ export async function fetchCandles(
   symbol: string,
   from: number,
   to: number,
-  resolution: '1',
+  resolution: CandleResolution,
   signal?: AbortSignal,
 ): Promise<Candle[]> {
   const url = wurl(

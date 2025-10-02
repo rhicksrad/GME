@@ -1,4 +1,5 @@
 import { features, wurl } from '../config';
+import type { EndpointStatus } from './features';
 
 export interface OptRow {
   ts: number;
@@ -115,6 +116,32 @@ async function requestChain(path: string): Promise<RequestResult> {
 }
 
 let demoOptionsPromise: Promise<OptionsResponse | null> | null = null;
+
+export async function probeOptionsAvailability(symbol: string): Promise<EndpointStatus> {
+  const url = wurl(`/poly/options/chain?underlying=${encodeURIComponent(symbol)}`);
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (response.body) {
+      try {
+        await response.body.cancel();
+      } catch {
+        // ignore cancel failures – this is a best-effort probe.
+      }
+    }
+    if (response.status === 403 || response.status === 401 || response.status === 404) {
+      return { ok: false, status: response.status };
+    }
+    if (response.status === 429) {
+      return { ok: true, status: response.status };
+    }
+    return { ok: response.ok, status: response.status };
+  } catch {
+    return { ok: false, status: 0 };
+  }
+}
 
 function asset(path: string): string {
   const base = (import.meta.env.BASE_URL ?? '/') as string;

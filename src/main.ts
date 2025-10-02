@@ -5,8 +5,9 @@ import {
   connectLive as connectWorker,
   fetchCandles as fetchWorkerCandles,
   fetchQuote as fetchWorkerQuote,
+  type CandleResolution,
 } from './data/workerClient';
-import { fetchChain, type OptRow, type OptionsResponse } from './data/optionsClient';
+import { fetchChain, probeOptionsAvailability, type OptRow, type OptionsResponse } from './data/optionsClient';
 import { createBaselineStore, getExpiryKey, toOccSymbol } from './options/chain';
 import {
   aggregateByExpiry,
@@ -21,7 +22,7 @@ import { createPriceChart, createVolumeChart } from './ui/charts';
 import { createOptionsPanel, type UnusualContractRow } from './ui/optionsPanel';
 import { createAlertsTicker } from './ui/alerts';
 import { createStatus } from './ui/status';
-import type { Candle, LiveConnection, Quote } from './data/workerClient';
+import type { LiveConnection, Quote } from './data/workerClient';
 import type { MinuteBar, Trade } from './types';
 import {
   connectLive as connectSimulator,
@@ -30,6 +31,14 @@ import {
 } from './sim/simulator';
 import { WORKER_ORIGIN } from './config';
 import { loadState, saveState } from './persist';
+import {
+  deriveFeatureState,
+  ensureMilliseconds,
+  expandCandlesToMinutes,
+  updateLimited,
+  type EndpointStatus,
+  type FeatureState,
+} from './data/features';
 
 interface OptionsSnapshotState {
   rows: OptRow[];
@@ -49,9 +58,13 @@ const header = document.createElement('header');
 const title = document.createElement('h1');
 const titleLine = document.createElement('span');
 const subtitleLine = document.createElement('span');
+const limitedBadge = document.createElement('span');
 titleLine.textContent = 'GME Radar';
 subtitleLine.textContent = `${symbol} realtime dashboard`;
-title.append(titleLine, subtitleLine);
+limitedBadge.className = 'badge limited';
+limitedBadge.textContent = 'Limited (free tier)';
+limitedBadge.hidden = true;
+title.append(titleLine, subtitleLine, limitedBadge);
 
 title.className = 'header-title';
 
@@ -138,6 +151,7 @@ const priceChart = createPriceChart(priceChartContainer);
 const volumeChart = createVolumeChart(volumeChartContainer);
 
 let aggregator = new MinuteOhlcAggregator(390);
+let featureState: FeatureState = { quote: true, candles: '1', options: true, limited: false };
 let mode: 'worker' | 'demo' = 'worker';
 let connection: LiveConnection | null = null;
 let quoteTimer: number | undefined;
@@ -159,6 +173,10 @@ let lastChain: OptionsSnapshotState | null = persisted?.options?.chain
 const alertHistory = new Map<string, number>();
 let optionsInFlight = false;
 let bootGeneration = 0;
+let optionsDisabledReason: string | null = null;
+let quoteBackoffUntil = 0;
+let candleBackoffUntil = 0;
+let optionsBackoffUntil = 0;
 
 statusUi.setMode('live');
 statusUi.setConnection('connecting');
@@ -171,8 +189,12 @@ statusUi.retryButton.addEventListener('click', () => {
   statusUi.setRetries(retryCount);
   if (mode === 'worker') {
     void refreshQuote();
-    void refreshCandles(true);
-    void refreshOptions(true);
+    if (featureState.candles) {
+      void refreshCandles(true);
+    }
+    if (featureState.options) {
+      void refreshOptions(true);
+    }
   }
 });
 statusUi.setRetries(retryCount);
@@ -210,40 +232,86 @@ async function loadWorker(generation: number) {
   statusUi.setMode('live');
   statusUi.setBanner(null);
   statusUi.setConnection('connecting');
+  quoteBackoffUntil = 0;
+  candleBackoffUntil = 0;
+  optionsBackoffUntil = 0;
   const now = Date.now();
-  const [quote, candles] = await Promise.all([
-    fetchWorkerQuote(symbol),
-    fetchWorkerCandles(symbol, now - 390 * 60_000, now, '1'),
-  ]);
+  const from = now - 390 * 60_000;
+
+  const quotePromise = fetchWorkerQuote(symbol);
+  let seedBars: MinuteBar[] = [];
+  let minuteStatus: EndpointStatus = { ok: false, status: 0 };
+  let fiveStatus: EndpointStatus = { ok: false, status: 0 };
+
+  try {
+    const minuteCandles = await fetchWorkerCandles(symbol, from, now, '1');
+    seedBars = expandCandlesToMinutes(minuteCandles, '1');
+    minuteStatus = { ok: true, status: 200 };
+  } catch (error) {
+    minuteStatus = extractStatus(error);
+  }
+
+  if (!minuteStatus.ok) {
+    try {
+      const fiveMinuteCandles = await fetchWorkerCandles(symbol, from, now, '5');
+      seedBars = expandCandlesToMinutes(fiveMinuteCandles, '5');
+      fiveStatus = { ok: true, status: 200 };
+    } catch (error) {
+      fiveStatus = extractStatus(error);
+    }
+  }
+
+  const quote = await quotePromise;
   if (generation !== bootGeneration) {
     return;
   }
+
+  const optionsStatus = await probeOptionsAvailability(symbol);
+  const derivedState = deriveFeatureState({
+    quote: { ok: true, status: 200 },
+    minuteCandles: minuteStatus,
+    fiveMinuteCandles: fiveStatus,
+    options: optionsStatus,
+  });
+  optionsDisabledReason = optionsStatus.ok ? null : describeOptionsStatus(optionsStatus.status);
+
   aggregator = new MinuteOhlcAggregator(390);
-  const bars = convertCandles(candles);
-  aggregator.seed(bars);
+  if (seedBars.length > 0) {
+    aggregator.seed(seedBars);
+  } else {
+    aggregator.seed([]);
+  }
   applyQuote(quote);
   scheduleUpdate();
-  statusUi.setConnection('connected');
+
   if (generation !== bootGeneration) {
     return;
   }
+
+  statusUi.setConnection('connected');
   connectStream(connectWorker(symbol));
   if (generation !== bootGeneration) {
     return;
   }
+
+  if (quoteTimer != null) {
+    window.clearInterval(quoteTimer);
+  }
   quoteTimer = window.setInterval(() => {
     void refreshQuote();
   }, 3000);
-  candleTimer = window.setInterval(() => {
-    void refreshCandles();
-  }, 20000);
-  optionsTimer = window.setInterval(() => {
-    void refreshOptions();
-  }, 45000);
+
+  applyFeatureState(derivedState, { optionsReason: optionsDisabledReason });
   if (generation !== bootGeneration) {
     return;
   }
-  await refreshOptions(true);
+
+  if (featureState.options) {
+    await refreshOptions(true);
+  } else {
+    statusUi.setOptionsStatus('DISABLED');
+    statusUi.setOptionsUpdated(null);
+  }
   if (generation !== bootGeneration) {
     return;
   }
@@ -258,6 +326,7 @@ async function enterDemo(reason: string, generation = bootGeneration) {
   statusUi.setMode('demo');
   statusUi.setBanner(`Demo mode: ${reason}`, 'info');
   statusUi.setConnection('connected');
+  applyFeatureState({ quote: true, candles: '1', options: true, limited: false });
   stopTimers();
   connection?.close();
   connection = null;
@@ -311,6 +380,9 @@ function connectStream(newConnection: LiveConnection) {
 }
 
 async function refreshQuote() {
+  if (Date.now() < quoteBackoffUntil) {
+    return;
+  }
   try {
     const quote = await fetchWorkerQuote(symbol);
     applyQuote(quote);
@@ -318,40 +390,95 @@ async function refreshQuote() {
     scheduleUpdate();
     retryCount = 0;
     statusUi.setRetries(retryCount);
+    statusUi.setBanner(null);
+    quoteBackoffUntil = 0;
   } catch (error) {
     retryCount += 1;
     statusUi.setRetries(retryCount);
     const status = (error as { status?: number }).status;
-    if (status && (status === 429 || status >= 500)) {
+    if (status === 429) {
+      statusUi.setBanner('Quote rate limited – retrying…', 'error');
+      quoteBackoffUntil = Date.now() + 5000;
+    } else if (status === 403) {
+      statusUi.setBanner('Quotes unavailable (403) – retrying later…', 'error');
+      quoteBackoffUntil = Date.now() + 60000;
+    } else if (status && status >= 500) {
       statusUi.setBanner('Worker error – retrying…', 'error');
+      quoteBackoffUntil = Date.now() + 15000;
+    } else {
+      quoteBackoffUntil = Date.now() + 10000;
     }
   }
 }
 
 async function refreshCandles(force = false) {
-  if (mode !== 'worker') {
+  if (mode !== 'worker' || !featureState.candles) {
+    return;
+  }
+  if (Date.now() < candleBackoffUntil) {
     return;
   }
   try {
-    const now = Date.now();
-    const candles = await fetchWorkerCandles(symbol, now - 390 * 60_000, now, '1');
-    aggregator.applySnapshot(convertCandles(candles));
+    const bars = await fetchCandlesSnapshot(featureState.candles);
+    aggregator.applySnapshot(bars);
     if (force) {
       scheduleUpdate();
     }
+    candleBackoffUntil = 0;
   } catch (error) {
     retryCount += 1;
     statusUi.setRetries(retryCount);
+    const status = (error as { status?: number }).status;
+    if (status === 403 || status === 401 || status === 404) {
+      if (featureState.candles === '1') {
+        const fallbackState = updateLimited({ ...featureState, candles: '5' as CandleResolution });
+        applyFeatureState(fallbackState, { optionsReason: optionsDisabledReason });
+        candleBackoffUntil = Date.now() + 60000;
+        try {
+          const fallbackBars = await fetchCandlesSnapshot('5');
+          aggregator.applySnapshot(fallbackBars);
+          scheduleUpdate();
+          candleBackoffUntil = 0;
+        } catch {
+          // Keep fallback state; retry on the next interval.
+        }
+      } else {
+        const disabledState = updateLimited({ ...featureState, candles: null });
+        applyFeatureState(disabledState, { optionsReason: optionsDisabledReason });
+        candleBackoffUntil = Date.now() + 120000;
+      }
+      return;
+    }
+    if (status === 429) {
+      candleBackoffUntil = Date.now() + 60000;
+    } else if (status && status >= 500) {
+      candleBackoffUntil = Date.now() + 45000;
+    } else {
+      candleBackoffUntil = Date.now() + 20000;
+    }
   }
 }
 
 async function refreshOptions(suppressAlerts = false) {
-  if (optionsInFlight) {
+  if (!featureState.options || optionsInFlight) {
+    return;
+  }
+  if (Date.now() < optionsBackoffUntil) {
     return;
   }
   optionsInFlight = true;
   try {
     const response = await fetchChain(symbol);
+    const status = typeof response.meta?.status === 'number' ? response.meta.status : undefined;
+    if (status === 403 || status === 401 || status === 404) {
+      optionsDisabledReason = describeOptionsStatus(status);
+      const disabledState = updateLimited({ ...featureState, options: false });
+      applyFeatureState(disabledState, { optionsReason: optionsDisabledReason });
+      return;
+    }
+    if (status === 429) {
+      optionsBackoffUntil = Date.now() + 120000;
+    }
     if (response.rows.length === 0) {
       const provider = response.meta?.source ? response.meta.source.toUpperCase() : 'OFFLINE';
       optionsPanel.setSource({
@@ -364,6 +491,7 @@ async function refreshOptions(suppressAlerts = false) {
       optionsInFlight = false;
       return;
     }
+    optionsBackoffUntil = 0;
     const spot = determineSpot();
     lastSpot = spot;
     const snapshot: OptionsSnapshotState = {
@@ -397,6 +525,7 @@ async function refreshOptions(suppressAlerts = false) {
     });
   } catch (error) {
     console.warn('Options fetch failed', error);
+    optionsBackoffUntil = Date.now() + 60000;
   } finally {
     optionsInFlight = false;
   }
@@ -547,19 +676,10 @@ function stopTimers() {
   }
 }
 
-function convertCandles(candles: Candle[]): MinuteBar[] {
-  return candles.map((bar) => ({
-    t: ensureMilliseconds(bar.t),
-    o: bar.o,
-    h: bar.h,
-    l: bar.l,
-    c: bar.c,
-    v: bar.v,
-  }));
-}
-
-function ensureMilliseconds(value: number): number {
-  return value > 1_000_000_000_000 ? value : value * 1000;
+async function fetchCandlesSnapshot(resolution: CandleResolution): Promise<MinuteBar[]> {
+  const now = Date.now();
+  const candles = await fetchWorkerCandles(symbol, now - 390 * 60_000, now, resolution);
+  return expandCandlesToMinutes(candles, resolution);
 }
 
 function applyQuote(quote: Quote) {
@@ -656,10 +776,104 @@ function determineOiThreshold(previous: number | undefined | null): number {
   return Math.max(1, Math.abs(previous) * 0.1);
 }
 
+function applyFeatureState(next: FeatureState, opts?: { optionsReason?: string | null }) {
+  const prev = featureState;
+  const normalized = updateLimited(next);
+  featureState = normalized;
+
+  if (normalized.limited) {
+    limitedBadge.hidden = false;
+    limitedBadge.textContent = limitedLabel(normalized);
+  } else {
+    limitedBadge.hidden = true;
+  }
+
+  if (!normalized.options) {
+    optionsDisabledReason = opts?.optionsReason ?? optionsDisabledReason ?? 'Options disabled (premium only)';
+    optionsPanel.setDisabled(true, optionsDisabledReason);
+    statusUi.setOptionsStatus('DISABLED');
+    statusUi.setOptionsUpdated(null);
+    if (optionsTimer != null) {
+      window.clearInterval(optionsTimer);
+      optionsTimer = undefined;
+    }
+  } else {
+    optionsDisabledReason = null;
+    optionsPanel.setDisabled(false);
+    if (!prev.options) {
+      statusUi.setOptionsStatus('—');
+      statusUi.setOptionsUpdated(null);
+    }
+    if (mode === 'worker') {
+      if (optionsTimer != null) {
+        window.clearInterval(optionsTimer);
+      }
+      optionsTimer = window.setInterval(() => {
+        void refreshOptions();
+      }, 60000);
+    }
+  }
+
+  if (!normalized.candles) {
+    if (candleTimer != null) {
+      window.clearInterval(candleTimer);
+      candleTimer = undefined;
+    }
+  } else if (mode === 'worker') {
+    const interval = normalized.candles === '1' ? 30000 : 60000;
+    if (candleTimer != null) {
+      window.clearInterval(candleTimer);
+    }
+    candleTimer = window.setInterval(() => {
+      void refreshCandles();
+    }, interval);
+  }
+}
+
+function limitedLabel(state: FeatureState): string {
+  if (!state.candles) {
+    return 'Limited (quotes only)';
+  }
+  if (state.candles === '5' && !state.options) {
+    return 'Limited (5m candles, no options)';
+  }
+  if (state.candles === '5') {
+    return 'Limited (5m candles)';
+  }
+  if (!state.options) {
+    return 'Limited (options disabled)';
+  }
+  return 'Limited (free tier)';
+}
+
+function describeOptionsStatus(status: number | undefined): string {
+  if (status === 403 || status === 401) {
+    return 'Options disabled (premium only)';
+  }
+  if (status === 404) {
+    return 'Options endpoint unavailable';
+  }
+  if (status === 429) {
+    return 'Options temporarily rate limited';
+  }
+  return 'Options data unavailable';
+}
+
+function extractStatus(error: unknown): EndpointStatus {
+  const status = (error as { status?: number })?.status;
+  return { ok: false, status: typeof status === 'number' ? status : 0 };
+}
+
 function changeSymbol(next: string) {
   stopTimers();
   connection?.close();
   connection = null;
+  featureState = { quote: true, candles: '1', options: true, limited: false };
+  optionsDisabledReason = null;
+  limitedBadge.hidden = true;
+  quoteBackoffUntil = 0;
+  candleBackoffUntil = 0;
+  optionsBackoffUntil = 0;
   symbol = next;
   symbolInput.value = symbol;
   subtitleLine.textContent = `${symbol} realtime dashboard`;
@@ -675,6 +889,8 @@ function changeSymbol(next: string) {
   statusUi.setLastUpdated(null);
   statusUi.setOptionsStatus('—');
   statusUi.setOptionsUpdated(null);
+  statusUi.setBanner(null);
+  optionsPanel.setDisabled(false);
   optionsPanel.renderHeatmap([]);
   optionsPanel.renderTotals([]);
   optionsPanel.renderUnusual([]);
