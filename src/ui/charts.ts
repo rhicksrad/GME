@@ -87,15 +87,47 @@ function drawVolumes(u: uPlot) {
   ctx.restore();
 }
 
-function createResizeObserver(chart: uPlot, element: HTMLElement): ResizeObserver {
+interface ResizeSubscription {
+  disconnect(): void;
+}
+
+function createResizeObserver(chart: uPlot, element: HTMLElement): ResizeSubscription {
+  let frame: number | null = null;
+  let lastWidth = -1;
+  let lastHeight = -1;
+
+  const applySize = () => {
+    frame = null;
+    const width = element.clientWidth;
+    const height = element.clientHeight;
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+    if (width === lastWidth && height === lastHeight) {
+      return;
+    }
+    lastWidth = width;
+    lastHeight = height;
+    chart.setSize({ width, height });
+  };
+
   const observer = new ResizeObserver(() => {
-    chart.setSize({
-      width: element.clientWidth,
-      height: element.clientHeight,
-    });
+    if (frame != null) {
+      window.cancelAnimationFrame(frame);
+    }
+    frame = window.requestAnimationFrame(applySize);
   });
   observer.observe(element);
-  return observer;
+
+  return {
+    disconnect() {
+      if (frame != null) {
+        window.cancelAnimationFrame(frame);
+        frame = null;
+      }
+      observer.disconnect();
+    },
+  };
 }
 
 export interface PriceChartHandle {
